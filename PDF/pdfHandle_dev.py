@@ -39,9 +39,6 @@ def pdf_encrypt(files: list, arg: Namespace) -> list:
 
             # 加密
             pdf_writer.encrypt(user_password=arg.password)
-            if not pdf_reader.is_encrypted:
-                failed_files.append([file[0], 'encryption failed'])  # 失败记录
-                continue
 
         except Exception as e:      # 加密其他非预期异常
             failed_files.append([file[0], 'encryption failed: ' + str(e)])   # 失败记录
@@ -82,12 +79,8 @@ def pdf_decrypt(files: list, arg: Namespace) -> list:
                 else:
                     continue
 
-            # 解密错误
-            if not pdf_reader.is_encrypted:
-                print(f"# failed to decrypt, password:{arg.password} is wrong!!")
-                exit(1)
         else:
-            failed_files.append([file[0], '未加密'])  # 失败记录
+            failed_files.append([file[0], 'unencrypted before'])  # 失败记录
             continue
 
         pdf_writer = PdfWriter()
@@ -97,7 +90,7 @@ def pdf_decrypt(files: list, arg: Namespace) -> list:
         for page in range(page_length):
             pdf_writer.add_page(pdf_reader.pages[page])
             # 打印进度条
-            print_progress(page, page_length, i, files_num)
+            print_progress(page+1, page_length, i, files_num)
 
         # 保存
         with open(file[1], 'wb') as f:
@@ -300,7 +293,7 @@ def read_password_book(password_book: str) -> [str]:
 
 
 def print_progress(iteration: int, total: int, now: int, count: int, prefix: str = 'Process',
-                   suffix: str = '',length: int = 50, fill: str = '*') -> None:
+                   suffix: str = '', length: int = 50, fill: str = '*') -> None:
     """
     打印进度条信息
     :param iteration: 迭代次数
@@ -357,10 +350,15 @@ def main():
             result = FUNCTIONS[args.function](pdf_files, args)   # 执行
             if isinstance(result[0], str):
                 print(result[1])
-            elif isinstance(result[0], list) and len(result[1]) != 0:
-                print("\n# Info:")
-                for msg in result[1]:
-                    print("\t-- " + msg[0] + ": " + msg[1])
+
+            elif isinstance(result[0], list):
+                print("\n"+ "-----" * 15 + "\n# Info:")
+                print("# A total of " + str(len(result[0])) + " files were encrypted " )
+                if len(result[1]) != 0:
+                    print("# But, There are something wrong: ")
+                    for msg in result[1]:
+                        print("\t-- " + msg[0] + ": " + msg[1])
+
             else:
                 pass
 
@@ -368,14 +366,14 @@ def main():
             print("# There something maybe useful:"
                   "\n\t1. You maybe use the wrong arguments, please use \'-h' for help"
                   "\n\t2. There maybe a BUG, please contact to 768476667@qq.com. Thank you!")
-            print("# Details wrong are as follows:\n" + str(e))
+            print("# Details wrong are as follows:\n\t" + str(e))
             exit(1)
     # 功能之外
     else:
         print("# You did not specify a function, please use \'-h\' for help!")
         exit(1)
 
-    print("\n\n### Finished ###")
+    print("-----" * 15 + "\n\tCompleted")
 
 
 if __name__ == "__main__":
