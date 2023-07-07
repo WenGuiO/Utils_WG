@@ -132,10 +132,11 @@ def pdf_merge(files: list):
     print("# save-path: " + result_file)
 
 
-def find_all_pdf(current_dir):
+def find_all_pdf(current_dir, ex_name: str = '.pdf'):
     """
     寻找当前目录以及子目录 所有 PDF文件
     :param current_dir: 当前目录
+    :param ex_name:
     :return: PDF文件列表: [file_name, file_path]
     """
     target = []  # 记录文件路径
@@ -143,16 +144,17 @@ def find_all_pdf(current_dir):
     # 遍历子目录所有文件
     for root, dirs, files in os.walk(current_dir):
         for file in files:
-            if file.endswith(".pdf"):
+            if file.endswith(ex_name):
                 target.append([file, os.path.join(root, file)])
 
     return target
 
 
-def find_current_dir_pdf(current_dir):
+def find_current_dir_pdf(current_dir, ex_name: str = '.pdf'):
     """
     寻找当前目录的 所有 PDF文件
     :param current_dir: 当前目录
+    :param ex_name:
     :return: PDF文件列表: [file_name, file_path]
     """
     target = []  # 记录文件路径
@@ -160,28 +162,72 @@ def find_current_dir_pdf(current_dir):
     files = os.listdir(current_dir)
     # 遍历当前目录中的所有文件
     for file in files:
-        if file.endswith(".pdf"):
+        if file.endswith(ex_name):
             target.append([file, os.path.join(current_dir, file)])
 
     return target
 
 
-def read_target_from_file(params_file):
+def read_target_from_file(book: str, file_ex_name: str = '.pdf'):
     """
     从指定 txt 文件读取 PDF 文件
-    :param params_file: 含有pdf文件路径的txt文件
+    :param book: 含有pdf文件路径的txt文件
+    :param file_ex_name: ss
     :return: PDF文件列表: [file_name, file_path]
     """
     target = []  # 记录文件路径
 
-    with open(params_file, 'r') as f:
+    with open(book, 'r') as f:
         lines = f.readlines()
         for line in lines:
             path = line.strip()  # 去除行尾的换行符
-            if os.path.isfile(path) and path.endswith(".pdf"):  # 判断是否为pdf文件
+            if os.path.isfile(path) and path.endswith(file_ex_name):  # 判断是否为pdf文件
                 target.append([os.path.basename(path), path])  # 添加到列表中
 
     return target
+
+
+def get_files(path: str, ex_name: str = '.pdf', mode: int = 0):
+    """
+    获取<指定目录>的<指定类型>文件。使用 path、ex_name、mode 是为方便后续可能出现的拓展
+    :param path: 指定扫描目录
+    :param ex_name: 指定类型文件
+    :param mode:  模式
+    :return: 文件列表 [ [filename, filepath], ...]
+    """
+    global args
+    # 文件检验
+    if not os.path.exists(path):
+        print("# File/Path does not exist")
+        exit(1)
+
+    # 获取文件所在目录
+    if os.path.isfile(path):
+        file_path = os.path.dirname(path)
+    else:
+        file_path = args.file
+
+    # 确认目标文件
+    files = []
+    if path.endswith('.txt'):  # 从文件中读取, 不受'-d'和'-r'限制, 故放最上面
+        files = read_target_from_file(path, ex_name)
+
+    elif mode == 1:     # 指定模式: 寻找所有文件, 默认不执行
+        files = find_all_pdf(file_path)
+
+    elif args.find_current_dir:  # 遍历当前目录, 优先级比'-r'高
+        files = find_current_dir_pdf(file_path)
+
+    elif args.find_all_dir:  # 遍历所有子目录
+        files = find_all_pdf(file_path)
+
+    elif path.endswith('.pdf'):  # 单文件操作
+        files.append([os.path.basename(args.file), args.file])
+
+    else:  # 对其他后缀文件, 默认遍历当前目录
+        files = find_current_dir_pdf(file_path)
+
+    return files
 
 
 def print_progress(iteration, total, prefix='Process', suffix='', length=50, fill='*'):
@@ -202,8 +248,11 @@ def print_progress(iteration, total, prefix='Process', suffix='', length=50, fil
     sys.stdout.flush()  # 刷新缓冲
 
 
-
 def main():
+    """
+    参数逻辑解析
+    :return: None
+    """
     global args
     # 所有函数
     FUNCTIONS = {
@@ -217,36 +266,11 @@ def main():
         'w': pdf_watermark
     }
 
-    # 文件检验
-    if not os.path.exists(args.file):
-        print("# File/Path does not exist")
-        exit(1)
-
-    # 获取文件路径
-    if os.path.isfile(args.file):
-        file_path = os.path.dirname(args.file)
-    else:
-        file_path = args.file
-        if not (args.find_current_dir or args.find_all_dir):
-            args.find_current_dir = True
-
-    # 确认目标文件
-    pdf_files = []
-    if args.find_current_dir:  # 遍历当前目录
-        pdf_files = find_current_dir_pdf(file_path)
-
-    elif args.find_all_dir:  # 遍历所有子目录
-        pdf_files = find_all_pdf(file_path)
-
-    elif args.file.endswith('.txt'):  # 从文件中读取
-        pdf_files = read_target_from_file(args.file)
-
-    elif args.file.endswith('.pdf'):  # 单文件操作
-        pdf_files.append([os.path.basename(args.file), args.file])
-
-    # 输出信息
+    # 获取操作文件
+    pdf_files = get_files(args.file)
+    # 输出提示信息
     if len(pdf_files) == 0:
-        print("# PDF file is not found, please check your path")
+        print("# file is not found, please check your path !")
         exit(1)
 
     print("-----" * 15 + "\n# The following file will be processed:")
@@ -254,17 +278,18 @@ def main():
         print("\t-- " + f[1])
     print("-----" * 15)
 
-    function = args.mode
-    if function in FUNCTIONS:
+    # 功能执行
+    if args.function in FUNCTIONS:
         try:
-            FUNCTIONS[function](pdf_files, args)
-        except Exception as e:
+            FUNCTIONS[args.function](pdf_files, args)   # 执行
+
+        except Exception as e:  # 捕获可能非预期的异常
             print("# There something maybe useful:"
                   "\n\t1. You maybe use the wrong arguments, please use \'-h' for help"
                   "\n\t2. There maybe a BUG, please contact to 768476667@qq.com. Thank you!")
             print("# Details wrong are as follows:\n" + str(e))
             exit(1)
-
+    # 功能之外
     else:
         print("# You did not specify a function, please use \'-h\' for help!")
         exit(1)
@@ -273,6 +298,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # 解析器
     parser = argparse.ArgumentParser(
         prog='pdfHandle',
         epilog='designed by wengui, mail: 768476667@qq.com'
@@ -281,7 +307,7 @@ if __name__ == "__main__":
     # 操作原PDF文件 / 目录 / TXT读取文件
     parser.add_argument("file", help="file/directory")
     # 功能选择: 加密  解密  合并  水印
-    parser.add_argument("mode", help="function to encrypt(e), decrypt(d), merge(m), watermark(w)")
+    parser.add_argument("function", help="function to encrypt(e), decrypt(d), merge(m), watermark(w)")
     # 指定目录, 子目录所有 PDF 文件
     parser.add_argument("-r", "--all-dir", action='store_true', dest='find_all_dir',
                         help="all subdirectory files")
@@ -298,5 +324,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print("\n# Welcome to use the PDF_HANDLE tool that designed by wengui.")
+
     # 执行
     main()
