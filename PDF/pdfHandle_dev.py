@@ -7,14 +7,14 @@ from PyPDF2 import PdfReader, PdfWriter, PdfMerger
 from argparse import Namespace
 
 
-def pdf_encrypt(files: list, arg: Namespace):
+def pdf_encrypt(files: list, arg: Namespace) -> list:
     """
     PDF 加密, 使用指定密码对源文件加密
     :param files: 加密文件
     :param arg: 用户参数
-    :return: None
+    :return: list
     """
-    files_nums = len(files)    # 文件数量
+    files_num = len(files)    # 文件数量
     failed_files = []   # 加密失败文件
     success_files = []    # 加密成功
 
@@ -25,57 +25,69 @@ def pdf_encrypt(files: list, arg: Namespace):
         pdf_reader = PdfReader(file[1])
 
         if pdf_reader.is_encrypted:     # 已加密
-            failed_files.append([file[1], '已加密'])   # 失败记录
-            files_nums -= 1
+            failed_files.append([file[0], 'previously encrypted'])   # 失败记录
             continue
 
         pdf_writer = PdfWriter()
-
-        # 逐页操作
-        page_length = len(pdf_reader.pages)
-        for page in range(page_length):
-            pdf_writer.add_page(pdf_reader.pages[page])
-            # 打印进度条:  当前文件序号/文件总数 + (单文件当前执行页数/总页数 * 进度条长度/文件总数)
-            print_progress(i, files_nums, extra_add=(page * 50) / (page_length * files_nums))
-
         try:
-            pdf_writer.encrypt(user_password=arg.password)  # 加密
+            # 逐页操作
+            page_length = len(pdf_reader.pages)
+            for page in range(page_length):
+                pdf_writer.add_page(pdf_reader.pages[page])
+                # 打印进度条
+                print_progress(page+1, page_length, i, files_num)
 
-        except Exception as e:      # 加密异常
-            failed_files.append([file[1], '加密失败: ' + str(e)])   # 失败记录
-            files_nums -= 1
+            # 加密
+            pdf_writer.encrypt(user_password=arg.password)
+            if not pdf_reader.is_encrypted:
+                failed_files.append([file[0], 'encryption failed'])  # 失败记录
+                continue
+
+        except Exception as e:      # 加密其他非预期异常
+            failed_files.append([file[0], 'encryption failed: ' + str(e)])   # 失败记录
             continue
 
         # 保存
         with open(file[1], 'wb') as f:
             pdf_writer.write(f)
-        success_files.append(file[1])   # 成功记录
 
-        return success_files, failed_files
+        success_files.append(file[0])   # 成功记录
+
+    return [success_files, failed_files]
 
 
-def pdf_decrypt(files: list, arg: Namespace):
+def pdf_decrypt(files: list, arg: Namespace) -> list:
     """
     PDF解密, 对原文件解密
     :param files: 加密的文件
     :param arg: 用户参数
-    :return: None
+    :return: list
     """
     files_num = len(files)    # 文件数量
     failed_files = []  # 加密失败文件
     success_files = []  # 加密成功
+    if arg.password_book:
+        passwords = read_password_book(arg.password_book)
+    else:
+        passwords = [arg.password]
 
     for i, file in enumerate(files, 1):  # [file_name, file_path]
         pdf_reader = PdfReader(file[1])
 
         # 判断是否加密
         if pdf_reader.is_encrypted:
-            pdf_reader.decrypt(arg.password)
+            for password in passwords:
+                if pdf_reader.decrypt(password):
+                    break
+                else:
+                    continue
+
             # 解密错误
-            if not pdf_reader.is_encrypted:     # TODO: 添加密码本
+            if not pdf_reader.is_encrypted:
                 print(f"# failed to decrypt, password:{arg.password} is wrong!!")
                 exit(1)
         else:
+            failed_files.append([file[0], '未加密'])  # 失败记录
             continue
 
         pdf_writer = PdfWriter()
@@ -84,77 +96,89 @@ def pdf_decrypt(files: list, arg: Namespace):
         # 逐页操作
         for page in range(page_length):
             pdf_writer.add_page(pdf_reader.pages[page])
-            # 打印进度条:  当前文件序号/文件总数 + (单文件当前执行页数/总页数 * 进度条长度/文件总数)
-            print_progress(i, files_num, extra_add=(page * 50) / (page_length * files_num))
+            # 打印进度条
+            print_progress(page, page_length, i, files_num)
 
         # 保存
         with open(file[1], 'wb') as f:
             pdf_writer.write(f)
 
-        print_progress(i, files_num)  # 打印进度
+        success_files.append(file[0])   # 成功记录
+
+    return [success_files, failed_files]
 
 
-def pdf_watermark(files: list, arg: Namespace):
+def pdf_watermark(files: list, arg: Namespace) -> list:
     """
-    为文件添加水印
+    为文件添加水印, 当水印与页面不同 横竖 时产生部分bug
     :param files: 添加水印的文件
     :param arg: 用户参数
-    :return: None
+    :return: list
     """
-    total_files = len(files)  # 处理数量
+    files_num = len(files)  # 文件数量
+    result_file = ''    # 存储位置
 
     # 保存位置
     result_path = os.path.join(os.path.curdir, 'results')
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    for i, file in enumerate(files, 1):  # [file_name, file_path]
-        water_pdf = PdfReader(arg.water_file)  # 读取水印
-        mark_page = water_pdf.pages[0]  # 水印所在的页数
-        pdf_reader = PdfReader(file[1])  # 读取原文件
-        pdf_writer = PdfWriter()
+    try:
+        for i, file in enumerate(files, 1):  # [file_name, file_path]
+            water_pdf = PdfReader(arg.water_file)  # 读取水印
+            mark_page = water_pdf.pages[0]  # 水印所在的页数
+            pdf_reader = PdfReader(file[1])  # 读取原文件
+            pdf_writer = PdfWriter()
 
-        for page in range(len(pdf_reader.pages)):
-            # 读取需要添加水印每一页pdf
-            source_page = pdf_reader.pages[page]
-            new_page = copy(mark_page)
-            # new_page(水印)在下面，source_page原文在上面
-            new_page.merge_page(source_page)
-            pdf_writer.add_page(new_page)
+            page_length = len(pdf_reader.pages)
+            for page in range(page_length):
+                # 读取需要添加水印每一页pdf
+                source_page = pdf_reader.pages[page]
+                new_page = copy(mark_page)
+                # new_page(水印)在下面，source_page原文在上面
+                new_page.merge_page(source_page)
+                pdf_writer.add_page(new_page)
+                # 打印进度条
+                print_progress(page+1, page_length, i, files_num)
 
-        result_file = os.path.join(result_path, file[0])  # 文件保存位置
-        # 保存
-        with open(result_file, 'wb') as f:
-            pdf_writer.write(f)
+            result_file = os.path.join(result_path, file[0])  # 文件保存位置
+            # 保存
+            with open(result_file, 'wb') as f:
+                pdf_writer.write(f)
 
-        print_progress(i, total_files)  # 打印进度
+    except Exception as e:  # 捕获非预期异常
+        return ['Failed', '# Failed to merge: ' + str(e)]
 
-    print("# save-path: " + result_path)
+    return ['Success', '# save-path: ', result_file]
 
 
-def pdf_merge(files: list, arg: Namespace):
+def pdf_merge(files: list, arg: Namespace) -> list:
     """
     PDF 批量合并
     :param files: 合并的文件
     :param arg: 用户参数
-    :return: None
+    :return: list
     """
     files_num = len(files)  # 处理数量
     merger = PdfMerger()
 
-    for i, file in enumerate(files, 1):
-        merger.append(file[1])
-        print_progress(i, files_num)  # 打印进度
+    try:
+        for i, file in enumerate(files, 1):
+            merger.append(file[1])
+            print_progress(i+1, files_num, 1, 1)  # 打印进度
 
-    # 将合并后的PDF保存到当前目录
-    result_file = os.path.join(os.path.curdir, 'merge_result.pdf')
-    merger.write(result_file)
+        # 将合并后的PDF保存到当前目录
+        result_file = os.path.join(os.path.curdir, 'merge_result.pdf')
+        merger.write(result_file)
+        merger.close()
 
-    merger.close()
-    print("# save-path: " + result_file)
+    except Exception as e:  # 捕获非预期异常
+        return ['Failed', '# Failed to merge: ' + str(e)]
+
+    return ['Success', '# save-path: ', result_file]
 
 
-def find_all_pdf(current_dir, ex_name: str = '.pdf'):
+def find_all_pdf(current_dir, ex_name: str = '.pdf') -> [str, str]:
     """
     寻找当前目录以及子目录 所有 PDF文件
     :param current_dir: 当前目录
@@ -172,7 +196,7 @@ def find_all_pdf(current_dir, ex_name: str = '.pdf'):
     return target
 
 
-def find_current_dir_pdf(current_dir, ex_name: str = '.pdf'):
+def find_current_dir_pdf(current_dir, ex_name: str = '.pdf') -> [str, str]:
     """
     寻找当前目录的 所有 PDF文件
     :param current_dir: 当前目录
@@ -191,7 +215,7 @@ def find_current_dir_pdf(current_dir, ex_name: str = '.pdf'):
     return target
 
 
-def read_target_from_file(book: str, file_ex_name: str = '.pdf'):
+def read_target_from_file(book: str, file_ex_name: str = '.pdf') -> [str, str]:
     """
     从指定 txt 文件读取 PDF 文件
     :param book: 含有pdf文件路径的txt文件
@@ -210,7 +234,7 @@ def read_target_from_file(book: str, file_ex_name: str = '.pdf'):
     return target
 
 
-def get_files(path: str, ex_name: str = '.pdf', mode: int = 0):
+def get_files(path: str, ex_name: str = '.pdf', mode: int = 0) -> [str]:
     """
     获取<指定目录>的<指定类型>文件。使用 path、ex_name、mode 是为方便后续可能出现的拓展
     :param path: 指定扫描目录
@@ -253,23 +277,47 @@ def get_files(path: str, ex_name: str = '.pdf', mode: int = 0):
     return files
 
 
-def print_progress(iteration: float, total: int, prefix: str = 'Process', suffix: str = '',
-                   length: int = 50, fill: str = '*', extra_add: float = 0):
+def read_password_book(password_book: str) -> [str]:
+    """
+    从指定<密码本>中获取密码
+    :param password_book: 密码本路径
+    :return: list: 密码
+    """
+    if not os.path.exists(password_book):
+        print("The \'passwords.txt\' file in the current directory was not found "
+              "or the specified file does not exist")
+        exit(1)
+
+    passwords = []  # 记录密码
+
+    with open(password_book, 'r') as f:
+        lines = f.readlines()
+        for line in lines:
+            password = line.strip()  # 去除行尾的换行符
+            passwords.append(password)
+
+    return passwords
+
+
+def print_progress(iteration: int, total: int, now: int, count: int, prefix: str = 'Process',
+                   suffix: str = '',length: int = 50, fill: str = '*') -> None:
     """
     打印进度条信息
     :param iteration: 迭代次数
     :param total: 总量
+    :param now: 当前进度
+    :param count: 总进度
     :param prefix: 进度条前缀
     :param suffix: 进度条后缀
     :param length: 进度条长度
     :param fill: 完成填充符
-    :param extra_add:
     :return: 进度条
     """
-    percent = '{:.2%}'.format(iteration / total + extra_add)    # 百分比进度
-    filled_length = int(length * (iteration / total + extra_add))    # 填充长度
+    single_percent = '{:.2%}'.format(iteration / total)    # 百分比进度
+    all_percent = f'{now}/{count}'
+    filled_length = int(length * (iteration / total))    # 填充长度
     bar = fill * filled_length + ' ' * (length - filled_length)     # 填充格式
-    sys.stdout.write(f'\r{prefix}: [ {bar} ] {percent} {suffix} ')    # 打印输出
+    sys.stdout.write(f'\r{prefix}({all_percent}): [ {bar} ] {single_percent} {suffix} ')    # 打印输出
     sys.stdout.flush()  # 刷新缓冲
 
 
@@ -306,7 +354,15 @@ def main():
     # 功能执行
     if args.function in FUNCTIONS:
         try:
-            FUNCTIONS[args.function](pdf_files, args)   # 执行
+            result = FUNCTIONS[args.function](pdf_files, args)   # 执行
+            if isinstance(result[0], str):
+                print(result[1])
+            elif isinstance(result[0], list) and len(result[1]) != 0:
+                print("\n# Info:")
+                for msg in result[1]:
+                    print("\t-- " + msg[0] + ": " + msg[1])
+            else:
+                pass
 
         except Exception as e:  # 捕获可能非预期的异常
             print("# There something maybe useful:"
@@ -342,6 +398,9 @@ if __name__ == "__main__":
     # 加密 / 解密 密码
     parser.add_argument('-p', '--password', dest='password', type=str, default="123456",
                         help='set password for encrypt or decrypt')
+    # 加密 / 解密 密码本
+    parser.add_argument('-pb', '--password-book', dest='password_book', type=str,
+                        help='set password book for encrypt or decrypt')
     # 指定 水印 文件
     parser.add_argument('-w', '--water-file', dest='water_file', type=str,
                         help='set water-file for watermark')
