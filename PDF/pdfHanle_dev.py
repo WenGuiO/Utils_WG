@@ -4,80 +4,101 @@ import sys
 from copy import copy
 
 from PyPDF2 import PdfReader, PdfWriter, PdfMerger
+from argparse import Namespace
 
 
-def pdf_encrypt(files: list, password: str = "123456"):
+def pdf_encrypt(files: list, arg: Namespace):
     """
     PDF 加密, 使用指定密码对源文件加密
     :param files: 加密文件
-    :param password: 加密密码
+    :param arg: 用户参数
     :return: None
     """
-    total_files = len(files)    # 处理数量
-    # 默认密码
-    if password == "123456":
+    files_nums = len(files)    # 文件数量
+    failed_files = []   # 加密失败文件
+    success_files = []    # 加密成功
+
+    if arg.password == "123456":    # 未设置密码, 使用默认密码
         print("# Not set password, use default password: 123456")
 
     for i, file in enumerate(files, 1):  # [file_name, file_path]
         pdf_reader = PdfReader(file[1])
-        if pdf_reader.is_encrypted:
-            total_files -= 1
+
+        if pdf_reader.is_encrypted:     # 已加密
+            failed_files.append([file[1], '已加密'])   # 失败记录
+            files_nums -= 1
             continue
+
         pdf_writer = PdfWriter()
 
         # 逐页操作
-        for page in range(len(pdf_reader.pages)):
+        page_length = len(pdf_reader.pages)
+        for page in range(page_length):
             pdf_writer.add_page(pdf_reader.pages[page])
+            # 打印进度条:  当前文件序号/文件总数 + (单文件当前执行页数/总页数 * 进度条长度/文件总数)
+            print_progress(i, files_nums, extra_add=(page * 50) / (page_length * files_nums))
 
-        pdf_writer.encrypt(user_password=password)  # 加密
+        try:
+            pdf_writer.encrypt(user_password=arg.password)  # 加密
+
+        except Exception as e:      # 加密异常
+            failed_files.append([file[1], '加密失败: ' + str(e)])   # 失败记录
+            files_nums -= 1
+            continue
 
         # 保存
         with open(file[1], 'wb') as f:
             pdf_writer.write(f)
+        success_files.append(file[1])   # 成功记录
 
-        print_progress(i, total_files)  # 打印进度
+        return success_files, failed_files
 
 
-def pdf_decrypt(files: list, password: str = '123456'):
+def pdf_decrypt(files: list, arg: Namespace):
     """
     PDF解密, 对原文件解密
     :param files: 加密的文件
-    :param password: 解密密码
+    :param arg: 用户参数
     :return: None
     """
-    total_files = len(files)    # 处理数量
+    files_num = len(files)    # 文件数量
+    failed_files = []  # 加密失败文件
+    success_files = []  # 加密成功
 
     for i, file in enumerate(files, 1):  # [file_name, file_path]
         pdf_reader = PdfReader(file[1])
 
         # 判断是否加密
         if pdf_reader.is_encrypted:
-            pdf_reader.decrypt(password)
+            pdf_reader.decrypt(arg.password)
             # 解密错误
-            if not pdf_reader.is_encrypted:
-                print(f"# failed to decrypt, password:{password} is wrong!!")
+            if not pdf_reader.is_encrypted:     # TODO: 添加密码本
+                print(f"# failed to decrypt, password:{arg.password} is wrong!!")
                 exit(1)
         else:
             continue
 
         pdf_writer = PdfWriter()
 
+        page_length = len(pdf_reader.pages)
         # 逐页操作
-        for page in range(len(pdf_reader.pages)):
+        for page in range(page_length):
             pdf_writer.add_page(pdf_reader.pages[page])
+            # 打印进度条:  当前文件序号/文件总数 + (单文件当前执行页数/总页数 * 进度条长度/文件总数)
+            print_progress(i, files_num, extra_add=(page * 50) / (page_length * files_num))
 
         # 保存
         with open(file[1], 'wb') as f:
             pdf_writer.write(f)
 
-        print_progress(i, total_files)  # 打印进度
+        print_progress(i, files_num)  # 打印进度
 
 
-def pdf_watermark(files: list, water_file: str):
+def pdf_watermark(files: list, arg: Namespace):
     """
     为文件添加水印
     :param files: 添加水印的文件
-    :param water_file: 水印
+    :param arg: 用户参数
     :return: None
     """
     total_files = len(files)  # 处理数量
@@ -88,7 +109,7 @@ def pdf_watermark(files: list, water_file: str):
         os.makedirs(result_path)
 
     for i, file in enumerate(files, 1):  # [file_name, file_path]
-        water_pdf = PdfReader(water_file)  # 读取水印
+        water_pdf = PdfReader(arg.water_file)  # 读取水印
         mark_page = water_pdf.pages[0]  # 水印所在的页数
         pdf_reader = PdfReader(file[1])  # 读取原文件
         pdf_writer = PdfWriter()
@@ -111,18 +132,19 @@ def pdf_watermark(files: list, water_file: str):
     print("# save-path: " + result_path)
 
 
-def pdf_merge(files: list):
+def pdf_merge(files: list, arg: Namespace):
     """
     PDF 批量合并
     :param files: 合并的文件
+    :param arg: 用户参数
     :return: None
     """
-    total_files = len(files)  # 处理数量
+    files_num = len(files)  # 处理数量
     merger = PdfMerger()
 
     for i, file in enumerate(files, 1):
         merger.append(file[1])
-        print_progress(i, total_files)  # 打印进度
+        print_progress(i, files_num)  # 打印进度
 
     # 将合并后的PDF保存到当前目录
     result_file = os.path.join(os.path.curdir, 'merge_result.pdf')
@@ -159,7 +181,8 @@ def find_current_dir_pdf(current_dir, ex_name: str = '.pdf'):
     """
     target = []  # 记录文件路径
 
-    files = os.listdir(current_dir)
+    files = os.listdir(current_dir)     # 获取所有文件
+
     # 遍历当前目录中的所有文件
     for file in files:
         if file.endswith(ex_name):
@@ -230,7 +253,8 @@ def get_files(path: str, ex_name: str = '.pdf', mode: int = 0):
     return files
 
 
-def print_progress(iteration, total, prefix='Process', suffix='', length=50, fill='*'):
+def print_progress(iteration: float, total: int, prefix: str = 'Process', suffix: str = '',
+                   length: int = 50, fill: str = '*', extra_add: float = 0):
     """
     打印进度条信息
     :param iteration: 迭代次数
@@ -239,10 +263,11 @@ def print_progress(iteration, total, prefix='Process', suffix='', length=50, fil
     :param suffix: 进度条后缀
     :param length: 进度条长度
     :param fill: 完成填充符
+    :param extra_add:
     :return: 进度条
     """
-    percent = '{:.1%}'.format(iteration / total)    # 百分比进度
-    filled_length = int(length * iteration // total)    # 填充长度
+    percent = '{:.2%}'.format(iteration / total + extra_add)    # 百分比进度
+    filled_length = int(length * (iteration / total + extra_add))    # 填充长度
     bar = fill * filled_length + ' ' * (length - filled_length)     # 填充格式
     sys.stdout.write(f'\r{prefix}: [ {bar} ] {percent} {suffix} ')    # 打印输出
     sys.stdout.flush()  # 刷新缓冲
