@@ -348,11 +348,11 @@ def main():
     if args.function in FUNCTIONS:
         try:
             result = FUNCTIONS[args.function](pdf_files, args)   # 执行
+            print("\n"+ "-----" * 15 + "\n# Info:")
             if isinstance(result[0], str):
                 print(result[1])
 
-            elif isinstance(result[0], list):
-                print("\n"+ "-----" * 15 + "\n# Info:")
+            elif isinstance(result[0], list)
                 print("# A total of " + str(len(result[0])) + " files were encrypted " )
                 if len(result[1]) != 0:
                     print("# But, There are something wrong: ")
