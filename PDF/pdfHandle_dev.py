@@ -61,8 +61,8 @@ def pdf_decrypt(files: list, arg: Namespace) -> list:
     :return: list
     """
     files_num = len(files)    # 文件数量
-    failed_files = []  # 加密失败文件
-    success_files = []  # 加密成功
+    failed_files = []  # 解密失败
+    success_files = []  # 解密成功
     if arg.password_book:
         passwords = read_password_book(arg.password_book)
     else:
