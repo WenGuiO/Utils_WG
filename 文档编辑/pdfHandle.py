@@ -9,7 +9,7 @@ from argparse import Namespace
 
 def pdf_encrypt(files: list, arg: Namespace) -> list:
     """
-    PDF 加密, 使用指定密码对源文件加密
+    文档编辑 加密, 使用指定密码对源文件加密
     :param files: 加密文件
     :param arg: 用户参数
     :return: list
@@ -147,7 +147,7 @@ def pdf_watermark(files: list, arg: Namespace) -> list:
 
 def pdf_merge(files: list, arg: Namespace) -> list:
     """
-    PDF 批量合并
+    文档编辑 批量合并
     :param files: 合并的文件
     :param arg: 用户参数
     :return: list
@@ -210,7 +210,7 @@ def find_current_dir_pdf(current_dir, ex_name: str = '.pdf') -> [str, str]:
 
 def read_target_from_file(book: str, file_ex_name: str = '.pdf') -> [str, str]:
     """
-    从指定 txt 文件读取 PDF 文件
+    从指定 txt 文件读取 文档编辑 文件
     :param book: 含有pdf文件路径的txt文件
     :param file_ex_name: ss
     :return: PDF文件列表: [file_name, file_path]
@@ -387,10 +387,10 @@ if __name__ == "__main__":
     parser.add_argument("file", help="file/directory")
     # 功能选择: 加密  解密  合并  水印
     parser.add_argument("function", help="function to encrypt(e), decrypt(d), merge(m), watermark(w)")
-    # 指定目录, 子目录所有 PDF 文件
+    # 指定目录, 子目录所有 文档编辑 文件
     parser.add_argument("-r", "--all-dir", action='store_true', dest='find_all_dir',
                         help="all subdirectory files")
-    # 指定当前目录所有 PDF 文件
+    # 指定当前目录所有 文档编辑 文件
     parser.add_argument("-d", "--current-dir", action='store_true', dest='find_current_dir',
                         help="current directory files")
     # 加密 / 解密 密码
